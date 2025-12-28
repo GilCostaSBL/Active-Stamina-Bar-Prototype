@@ -51,6 +51,7 @@ export default function App() {
     exhaustionDecay: 0.5, // 1% every 2 seconds
     actionStaminaDecay: 3.0, // 3% per second
   });
+  const [isPaused, setIsPaused] = useState(false);
 
   const animationFrameId = useRef<number>();
   const previousTime = useRef<number>();
@@ -69,8 +70,14 @@ export default function App() {
   };
   
   const resetStamina = useCallback(() => {
-    setStamina({ exhaustion: TOTAL_STAMINA, action: TOTAL_STAMINA });
-    previousTime.current = undefined;
+    setIsPaused(true); // Pause the game loop
+    setStamina({ exhaustion: TOTAL_STAMINA, action: TOTAL_STAMINA }); // Reset stamina state
+
+    // After a short delay (longer than the CSS transition), unpause the loop
+    setTimeout(() => {
+      previousTime.current = undefined; // Reset the loop's timer
+      setIsPaused(false);
+    }, 200);
   }, []);
 
   useEffect(() => {
@@ -95,6 +102,12 @@ export default function App() {
   }, []);
 
   const gameLoop = useCallback((currentTime: number) => {
+    // If paused, skip all calculations but keep the loop running.
+    if (isPaused) {
+      animationFrameId.current = requestAnimationFrame(gameLoop);
+      return;
+    }
+
     if (previousTime.current === undefined) {
       previousTime.current = currentTime;
       animationFrameId.current = requestAnimationFrame(gameLoop);
@@ -123,7 +136,7 @@ export default function App() {
 
     previousTime.current = currentTime;
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [config]);
+  }, [config, isPaused]);
 
 
   useEffect(() => {
