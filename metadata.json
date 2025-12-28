@@ -1,0 +1,5 @@
+{
+  "name": "Interactive Stamina Bar Prototype",
+  "description": "A dynamic, interactive stamina bar prototype for games. It showcases mechanics for natural stamina decay, accelerated drain during actions (holding a key), and recovery. All rates are adjustable via sliders for real-time tuning.",
+  "requestFramePermissions": []
+}
