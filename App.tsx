@@ -2,16 +2,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const TOTAL_STAMINA = 100;
+const ACTION_STAMINA_RECOVERY_RATE = 2.0; // Fixed 2% per second recovery for the action bar
 
 interface StaminaState {
-  max: number;
-  current: number;
+  exhaustion: number;
+  action: number;
 }
 
 interface ConfigState {
-  maxStaminaDecay: number;
-  currentStaminaDecay: number;
-  currentStaminaRecovery: number;
+  exhaustionDecay: number;
+  actionStaminaDecay: number;
 }
 
 // A reusable UI component for a slider control
@@ -45,12 +45,11 @@ const SliderControl: React.FC<{
 );
 
 export default function App() {
-  const [stamina, setStamina] = useState<StaminaState>({ max: TOTAL_STAMINA, current: TOTAL_STAMINA });
+  const [stamina, setStamina] = useState<StaminaState>({ exhaustion: TOTAL_STAMINA, action: TOTAL_STAMINA });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [config, setConfig] = useState<ConfigState>({
-    maxStaminaDecay: 1.5,
-    currentStaminaDecay: 30,
-    currentStaminaRecovery: 20,
+    exhaustionDecay: 0.5, // 1% every 2 seconds
+    actionStaminaDecay: 3.0, // 3% per second
   });
 
   const animationFrameId = useRef<number>();
@@ -70,7 +69,8 @@ export default function App() {
   };
   
   const resetStamina = useCallback(() => {
-    setStamina({ max: TOTAL_STAMINA, current: TOTAL_STAMINA });
+    setStamina({ exhaustion: TOTAL_STAMINA, action: TOTAL_STAMINA });
+    previousTime.current = undefined;
   }, []);
 
   useEffect(() => {
@@ -97,22 +97,28 @@ export default function App() {
   const gameLoop = useCallback((currentTime: number) => {
     if (previousTime.current === undefined) {
       previousTime.current = currentTime;
+      animationFrameId.current = requestAnimationFrame(gameLoop);
+      return;
     }
     const deltaTime = (currentTime - previousTime.current) / 1000;
     
     setStamina(prev => {
-      const newMax = Math.max(0, prev.max - config.maxStaminaDecay * deltaTime);
+      // Exhaustion bar decays constantly and does not recover.
+      const exhaustionChange = -config.exhaustionDecay;
+      const newExhaustion = prev.exhaustion + exhaustionChange * deltaTime;
+      const clampedExhaustion = Math.max(0, Math.min(TOTAL_STAMINA, newExhaustion));
       
-      let newCurrent;
+      // Action bar drains on key press, and recovers up to the exhaustion level otherwise.
+      let newAction;
       if (isSpacePressedRef.current) {
-        newCurrent = prev.current - config.currentStaminaDecay * deltaTime;
+        newAction = prev.action - config.actionStaminaDecay * deltaTime;
       } else {
-        newCurrent = prev.current + config.currentStaminaRecovery * deltaTime;
+        newAction = prev.action + ACTION_STAMINA_RECOVERY_RATE * deltaTime;
       }
       
-      newCurrent = Math.max(0, Math.min(newCurrent, newMax));
+      const clampedAction = Math.max(0, Math.min(clampedExhaustion, newAction));
       
-      return { max: newMax, current: newCurrent };
+      return { exhaustion: clampedExhaustion, action: clampedAction };
     });
 
     previousTime.current = currentTime;
@@ -130,29 +136,34 @@ export default function App() {
     };
   }, [gameLoop]);
 
-  const maxPercent = (stamina.max / TOTAL_STAMINA) * 100;
-  const currentPercent = (stamina.current / TOTAL_STAMINA) * 100;
+  const exhaustionPercent = (stamina.exhaustion / TOTAL_STAMINA) * 100;
+  // Calculate the action percentage relative to the current exhaustion level for the gradient
+  const actionRelativeToExhaustionPercent = stamina.exhaustion > 0 ? (stamina.action / stamina.exhaustion) * 100 : 0;
 
   return (
     <main className="bg-gray-900 min-h-screen flex items-center justify-center font-sans p-4">
       <div className="w-full max-w-2xl bg-gray-800 shadow-2xl rounded-2xl p-6 md:p-8 border border-gray-700">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-white">Interactive Stamina Bar</h1>
-          <p className="text-gray-400 mt-2">Press and hold the <kbd className="px-2 py-1.5 text-xs font-semibold text-gray-200 bg-gray-700 border border-gray-600 rounded-lg">Spacebar</kbd> to drain stamina.</p>
+          <p className="text-gray-400 mt-2">Press and hold the <kbd className="px-2 py-1.5 text-xs font-semibold text-gray-200 bg-gray-700 border border-gray-600 rounded-lg">Spacebar</kbd> to drain action stamina.</p>
         </div>
 
         {/* Stamina Bar */}
-        <div className="relative w-full h-8 bg-red-600/50 rounded-full overflow-hidden shadow-inner border-2 border-black/30 mb-8">
-            <div 
-                className="absolute top-0 left-0 h-full bg-green-800" 
-                style={{ width: `${maxPercent}%`, transition: 'width 150ms linear' }}
-            ></div>
-            <div 
-                className="absolute top-0 left-0 h-full bg-green-400"
-                style={{ width: `${currentPercent}%`, transition: 'width 150ms linear' }}
+        <div className="relative w-full h-8 bg-gray-700 rounded-full overflow-hidden shadow-inner border-2 border-black/30 mb-8" title="Total Stamina">
+            {/* Combined Action/Exhaustion Bar */}
+            <div
+                className="absolute top-0 left-0 h-full"
+                style={{
+                    width: `${exhaustionPercent}%`,
+                    // Uses a gradient to show light green (Action) up to its value, and dark green (Exhaustion) for the rest.
+                    // RGB values correspond to Tailwind's green-400 and green-800.
+                    background: `linear-gradient(to right, rgb(74 222 128) ${actionRelativeToExhaustionPercent}%, rgb(22 101 52) ${actionRelativeToExhaustionPercent}%)`,
+                    transition: 'width 150ms linear, background 150ms linear'
+                }}
+                title={`Action: ${Math.round(stamina.action)}, Exhaustion: ${Math.round(stamina.exhaustion)}`}
             ></div>
             <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-sm tracking-wider" style={{ textShadow: '1px 1px 2px black' }}>
-                {Math.round(stamina.current)} / {Math.round(stamina.max)}
+                {Math.round(stamina.action)} / {Math.round(stamina.exhaustion)}
             </div>
         </div>
 
@@ -161,28 +172,20 @@ export default function App() {
           <h2 className="text-xl font-semibold text-white mb-4 text-center">Adjust Parameters</h2>
           <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
               <SliderControl 
-                label="Max Stamina Decay"
-                value={config.maxStaminaDecay}
-                min={0} max={10} step={0.1}
+                label="Exhaustion Decay"
+                value={config.exhaustionDecay}
+                min={0} max={10} step={0.5}
                 onChange={handleConfigChange}
-                unit="pts/sec"
-                name="maxStaminaDecay"
+                unit="%/sec"
+                name="exhaustionDecay"
               />
               <SliderControl 
-                label="Action Stamina Drain"
-                value={config.currentStaminaDecay}
-                min={0} max={100} step={1}
+                label="Action Stamina Decay"
+                value={config.actionStaminaDecay}
+                min={0} max={15} step={0.5}
                 onChange={handleConfigChange}
-                unit="pts/sec"
-                name="currentStaminaDecay"
-              />
-              <SliderControl 
-                label="Stamina Recovery"
-                value={config.currentStaminaRecovery}
-                min={0} max={100} step={1}
-                onChange={handleConfigChange}
-                unit="pts/sec"
-                name="currentStaminaRecovery"
+                unit="%/sec"
+                name="actionStaminaDecay"
               />
           </div>
         </div>
